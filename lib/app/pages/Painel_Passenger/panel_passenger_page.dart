@@ -14,7 +14,6 @@ import 'package:uber_clone/data/models/usuario.dart';
 import 'package:uber_clone/data/utils/status_requisicao.dart';
 import 'package:uber_clone/data/utils/usuario_firebase.dart';
 import 'package:uber_clone/domain/usecases/authentication.dart';
-
 import '../../../data/models/destino.dart';
 import '../../widgets/show_snackbar.dart';
 
@@ -28,22 +27,20 @@ class PanelPassengerPage extends StatefulWidget {
 class _PanelPassengerPageState extends State<PanelPassengerPage> {
   final TextEditingController _controllerDestino =
       TextEditingController(text: "rua Castro Alves, 255, São Miguel do Iguaçu");
-      //TextEditingController(text: "rua Castro Alves, 255");
   final Completer<GoogleMapController> _controller =
       Completer<GoogleMapController>();
 
   FirebaseFirestore db = FirebaseFirestore.instance;
 
   final Set<Marker> _marcadores = {};
-  late String idRequisicao;
   String _idRequisicao = "";
 
-  //Controles para exibição na tela
   bool exibirCaixaEnderecoDestino = true;
   String textoBotao = "Chamar Uber";
   Color corBotao = primaryColor;
   VoidCallback funcaoBotao = () {};
   late Position _localPassageiro;
+  Map<String, dynamic> _dadosRequisicao = {};
 
   bool loading = false;
   CameraPosition _posicaoCamera = const CameraPosition(
@@ -108,14 +105,20 @@ class _PanelPassengerPageState extends State<PanelPassengerPage> {
 
     Geolocator.getPositionStream(locationSettings: locationSettings)
         .listen((Position position) {
-      setState(() {
-        exibirMarcadorPassageiro(position);
+      if(_idRequisicao.isNotEmpty){
+        if (kDebugMode) {print("TESTANDO ID REQUISICAO: $_idRequisicao");}
+        UsuarioFirebase.atualizarDadosLocalizacao(
+            _idRequisicao,
+            position.latitude,
+            position.longitude
+        );
 
-        _posicaoCamera = CameraPosition(
-            target: LatLng(position.latitude, position.longitude), zoom: 19);
-        movimentarCamera(_posicaoCamera);
-        _localPassageiro = position;
-      });
+      }else{
+        if (kDebugMode) {print("TESTANDO POSITION: $position");}
+        setState(() {
+          _localPassageiro = position;
+        });
+      }
     });
   }
 
@@ -273,7 +276,7 @@ class _PanelPassengerPageState extends State<PanelPassengerPage> {
         .doc(passageiro.id)
         .set(dadosRequisicaoAtiva);
 
-    //statusAguardando();
+    statusAguardando();
   }
 
   alterarBotaoPrincipal(String text, Color cor, Function() funcao) {
@@ -290,6 +293,22 @@ class _PanelPassengerPageState extends State<PanelPassengerPage> {
       alterarBotaoPrincipal("Chamar Uber", primaryColor, () {
         _chamarUber();
       });
+
+      Position position = Position(
+          longitude: _localPassageiro.longitude,
+          latitude: _localPassageiro.latitude,
+          timestamp: null,
+          accuracy: 0,
+          altitude: 0,
+          heading: 0,
+          speed: 0,
+          speedAccuracy: 0
+      );
+      exibirMarcadorPassageiro(position);
+
+      _posicaoCamera = CameraPosition(
+          target: LatLng(position.latitude, position.longitude), zoom: 19);
+      movimentarCamera(_posicaoCamera);
     });
   }
 
@@ -299,6 +318,24 @@ class _PanelPassengerPageState extends State<PanelPassengerPage> {
       alterarBotaoPrincipal("Cancelar", Colors.red, () {
         _cancelarUber();
       });
+
+      double passageiroLat = _dadosRequisicao["passageiro"]["latitude"];
+      double passageiroLon = _dadosRequisicao["passageiro"]["longitude"];
+      Position position = Position(
+          longitude: passageiroLon,
+          latitude: passageiroLat,
+          timestamp: null,
+          accuracy: 0,
+          altitude: 0,
+          heading: 0,
+          speed: 0,
+          speedAccuracy: 0
+      );
+      exibirMarcadorPassageiro(position);
+
+      _posicaoCamera = CameraPosition(
+          target: LatLng(position.latitude, position.longitude), zoom: 19);
+      movimentarCamera(_posicaoCamera);
     });
   }
 
@@ -314,7 +351,7 @@ class _PanelPassengerPageState extends State<PanelPassengerPage> {
 
     db
         .collection("requisicoes")
-        .doc(idRequisicao)
+        .doc(_idRequisicao)
         .update({"status": StatusRequisicao.sCANCELADA}).then((_) {
       db.collection("requisicao_ativa").doc(firebaseUser?.uid).delete();
     });
@@ -341,15 +378,15 @@ class _PanelPassengerPageState extends State<PanelPassengerPage> {
 
   _adicionarListenerRequisicao(String idRequisicao) async {
 
-    //await
     db.collection("requisicoes")
         .doc(idRequisicao)
     .snapshots()
     .listen((snapshot) {
       if (snapshot.data() != null) {
         Map<String, dynamic>? dados = snapshot.data();
-        String status = dados?["status"];
-        idRequisicao = dados?["id_requisicao"];
+        _dadosRequisicao = dados!;
+        String status = dados["status"];
+        //_idRequisicao = dados["id_requisicao"];
 
         switch (status) {
           case StatusRequisicao.sAGUARDANDO:
@@ -369,7 +406,6 @@ class _PanelPassengerPageState extends State<PanelPassengerPage> {
     super.initState();
     _recuperarRequisicaoAtiva();
 
-    recuperarUltimaLocalizacaoConhecida();
     permissionLocation();
 
   }
